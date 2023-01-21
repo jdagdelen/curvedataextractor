@@ -7,7 +7,7 @@ from PIL import Image
 from object_detection.utils import ops as utils_ops
 
 
-def detect_axes_and_legends(image, graph):
+def detect_objects(image, graph):
     """ Runs the axis detection model on the image and returns the detected axes."""
     with graph.as_default():
         with tf.compat.v1.Session() as sess:

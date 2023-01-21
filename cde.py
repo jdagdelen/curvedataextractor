@@ -2,14 +2,16 @@
 
 import argparse
 import os
+import json
 from distutils.version import StrictVersion
 import tensorflow as tf
 from PIL import Image
 import label_map_util_v2
 import numpy as np
 
-from axis_legend_detection import get_image_boxes, load_image_into_numpy_array, detect_axes
-
+from figure_object_detection import get_image_boxes, detect_objects
+from utils import image_to_numpy
+from posterization import preprocess
 
 def validate_input_file_types(inputdir):
     # Check that all images are pngs or jpgs
@@ -57,6 +59,7 @@ def get_dectection_graph(graph_path):
             tf.import_graph_def(od_graph_def, name='')
     return detection_graph
 
+
 def get_category_index(label_map_path):
     """Get the category index for the object detection model.
     
@@ -67,46 +70,94 @@ def get_category_index(label_map_path):
     return label_map_util_v2.create_category_index_from_labelmap(label_map_path, use_display_name=True)
 
 
-def load_image_into_numpy_array(image):
-    (im_width, im_height) = image.size
-    return np.array(image.convert("RGB").getdata()).reshape((im_height, im_width, 3)).astype(np.uint8)
-
-def main():
-    parser = argparse.ArgumentParser(description='Extract data from line plots.')
-    parser.add_argument('input', help='Input image file directory')
-    parser.add_argument('output', help='Output JSON file directory')
-    parser.add_argument('--model', help='Path to pretrained model.', default='models/research/object_detection/inference_graph/frozen_inference_graph.pb')
-
-    PATH_TO_FROZEN_GRAPH = parser.parse_args().model
-
-    if StrictVersion(tf.__version__) < StrictVersion('1.9.0'):
-        raise ImportError('Please upgrade your TensorFlow installation to v1.9.* or later!')
+def write_extracted_figure_data(objects, clusters, output):
+    """Write extracted figure data to JSON file.
     
-    input_dir = parser.parse_args().input
+    Args:
+        objects: list of objects detected in figure
+        clusters: list of clusters detected in figure
+    """
+    # Write cluster and object data to JSON files, and save images
+    for i, cluster in enumerate(clusters):
+        Image.fromarray(cluster['image']).save(os.path.join(output, 'cluster_{}.png'.format(i)))
+    for i, object in enumerate(objects):
+        Image.fromarray(object['image']).save(os.path.join(output, 'object_{}.png'.format(i)))
+    # add filenames to object and cluster data
+    for i, cluster in enumerate(clusters):
+        cluster['filename'] = 'cluster_{}.png'.format(i)
+    for i, object in enumerate(objects):
+        object['filename'] = 'object_{}.png'.format(i)
+    with open(os.path.join(output, 'cluster_data.json'), 'w') as f:
+        json.dump(clusters, f)
+    with open(os.path.join(output, 'object_data.json'), 'w') as f:
+        json.dump(objects, f)
+
+
+def extract_figure_data(input_dir, output, model='models/research/object_detection/inference_graph/frozen_inference_graph.pb'):
+    """Extract figure data from images in input directory.
+    
+    Args:
+        input_dir: directory containing images to be processed
+        output: directory to save output files
+        model: path to object detection model
+    
+    Returns:
+        objects: list of objects detected in figure
+        clusters: list of clusters detected in figure
+    """
     validate_input_file_types(input_dir)
     figure_images = open_images(input_dir)
-    detection_graph = get_dectection_graph(PATH_TO_FROZEN_GRAPH)
+    detection_graph = get_dectection_graph(model)
     category_index = get_category_index('cde_labelmap.pbtxt')
 
     for image in enumerate(figure_images):
         im_width, im_height = image.size
         # the array based representation of the image will be used later in order to prepare the
         # result image with boxes and labels on it.
-        image_np = load_image_into_numpy_array(image)
-        # Actual detection.
-        axes = detect_axes(image_np, detection_graph)
+        image_np = image_to_numpy(image)
+        # Detect areas containing figure axes and legends.
+        detected_objects = detect_objects(image_np, detection_graph)
 
         # Extract images of axes
-        axis_data, axis_images = get_image_boxes(
+        object_data, object_images = get_image_boxes(
             im_width, 
             im_height,
             image_np, 
-            axes['detection_boxes'],
-            axes['detection_classes'],
-            axes['detection_scores'], 
+            detected_objects['detection_boxes'],
+            detected_objects['detection_classes'],
+            detected_objects['detection_scores'], 
             category_index, 
             use_normalized_coordinates=True
             )
+
+        objects = [{'image': object_image, 'data': object_data[i]} for i, object_image in enumerate(object_images)]
+        # Remove legends and axes from plot, along with black and white items
+        posterized_image = preprocess(image_np, object_data)
+        
+        # Get pixel classes and color palette for posterized image
+        pixel_classes, color_palette, cluster_scores = get_pixel_classes(posterized_image)
+        # Separate out images for each cluster
+        clusters = []
+        for i in range(len(color_palette)):
+            cluster_image = np.ones(image_np.shape)*255
+            cluster_image[pixel_classes == i] = posterized_image[pixel_classes == i]
+            cluster_pixel_coordinates = np.where(pixel_classes == i)
+            clusters.append({'image': cluster_image, 'color': color_palette[i], 'score': cluster_scores[i], 'coordinates': cluster_pixel_coordinates})
+        # Sort clusters by score
+        clusters = sorted(clusters, key=lambda k: k['score'], reverse=True)
+        return objects, clusters
+
+
+if __name__ == '__main__':
+    if StrictVersion(tf.__version__) < StrictVersion('1.9.0'):
+        raise ImportError('Please upgrade your TensorFlow installation to v1.9.* or later!')
+    parser = argparse.ArgumentParser(description='Extract data from line plots.')
+    parser.add_argument('input', help='Input image file directory')
+    parser.add_argument('output', help='Output JSON file directory')
+    parser.add_argument('--model', help='Path to pretrained model.', default='models/research/object_detection/inference_graph/frozen_inference_graph.pb')
+    args = parser.parse_args()
+    objects, clusters = extract_figure_data(args.input, args.output, args.model)
+
 
         
 

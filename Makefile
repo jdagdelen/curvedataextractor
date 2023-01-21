@@ -10,13 +10,12 @@ env:
 	conda init bash
 
 install:
-	snap install protobuf --classic
 	$(CONDA_ACTIVATE) cde
+	@conda install -c anaconda protobuf
 	@pip install -r requirements.txt
 	@git clone https://github.com/tensorflow/models.git
-	cd models/research
-	@protoc object_detection/protos/*.proto --python_out=.
-	cp object_detection/packages/tf2/setup.py .
+	@protoc models/research/object_detection/protos/*.proto --python_out=.
+	@cp models/research/object_detection/packages/tf2/setup.py models/research/
 	@python -m pip install .
 
 install_model:
@@ -26,6 +25,7 @@ install_model:
 	cp -r folder/inference_graph models/research/object_detection
 	mkdir models/research/object_detection/training
 	cp folder/labelmap.pbtxt models/research/object_detection/training
+	rm -rf folder
 
 test:
 	@conda activate cde
@@ -35,3 +35,5 @@ clean:
 	rm -rf __pycache__
 	rm -f *.pyc
 	rm -f *.log
+	conda deactivate
+	conda env remove -n cde
