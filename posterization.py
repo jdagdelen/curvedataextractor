@@ -2,60 +2,15 @@ import numpy as np
 import cv2
 from PIL import Image
 from PIL.Image import Image as Image_type
+from utils import rgb2hex, remove_area
 
 
-def rgb2hex(color):
-    [r,g,b] = color
-    rgb = (int(np.round(255*r)), int(np.round(255*g)), int(np.round(255*b)))
-    return '#%02x%02x%02x' % rgb
-
-
-def read_image(image):
-    """Return image as numpy array of RGB values.
-    
-    If image is a string, it is assumed to be a path to an image file.
-    If image is already a numpy array, it is returned as is.
-    
-    Args:
-        image: Either a string or a numpy array.
-        
-    Returns:
-        A numpy array of RGB values.
-    """
-    if type(image) is not Image_type:
-        img = Image.open(image)
-    else:
-        img = image
-    if img.mode != 'RGBA':
-        img = img.convert('RGBA')
-
-    im = np.asarray(img)
-    im = im[:, :, :3]
-    return im
-
-
-def remove_area(image, box, padding=5, color=(255, 255, 255)):
-    """Removes area in box from image.
+def preprocess(image, areas_to_remove):
+    """Converts image to HSV, removes all black and white objects and other objects.
     
     Args:
         image: Numpy array of RGB values.
-        box: A dictionary with keys 'xmin', 'ymin', 'xmax', 'ymax'.
-        padding: Number of pixels to add to box.
-        color: Color to fill box with.
-
-    Returns:
-        A numpy array of RGB values with area in box removed.
-    """
-
-    return cv2.rectangle(image, (box['xmin']-padding, box['ymin']-padding), (box['xmax']+padding, box['ymax']+padding), color, -1)
-
-
-def preprocess(image, legends):
-    """Converts image to HSV, removes all black and white objects and detected legends.
-    
-    Args:
-        image: Numpy array of RGB values.
-        legends: A list of legend dictionaries with key 'detected_box'
+        areas_to_remove: A list of areas to remove as dicts with key 'detected_box'
         
     Returns:
         Image with legends and black and white details removed as a numpy array of RGB values.
@@ -65,8 +20,8 @@ def preprocess(image, legends):
     image[(hsv[:, :, 1] < 124) | (hsv[:, :, 2] < 124)] = [255, 255, 255]
     
     # Remove legends
-    for legend in legends:
-        image = remove_area(image, legend['detected_box'])
+    for area in areas_to_remove:
+        image = remove_area(image, area['detected_box'])
     return image
 
 
@@ -89,7 +44,7 @@ def classify_pixels(image, n_colors=10, color_threshold=0.1, max_iter=20, epsilo
         n_colors: Number of colors to classify pixels into.
     
     Returns:
-        A numpy array of the same shape as image with each pixel classified by color class.
+        A numpy array of RGB values with each pixel replaced by the color of its cluster, a list of colors and a list of cluster scores.
     """
 
     # Reshape image to be a list of pixels
@@ -109,7 +64,8 @@ def classify_pixels(image, n_colors=10, color_threshold=0.1, max_iter=20, epsilo
         if best_score is None or compactness < best_score:
             best_score = compactness
             n_colors += 1
-
+    # claculate mean squared distance score for pixels in each cluster
+    cluster_scores = [np.mean(np.sum((pixel_vals[labels == i] - centers[i])**2, axis=1)) for i in range(n_colors)]
     # Convert data into 8-bit values
     centers = np.uint8(centers)
     # Flatten the labels array
@@ -120,4 +76,5 @@ def classify_pixels(image, n_colors=10, color_threshold=0.1, max_iter=20, epsilo
     segmented_image = segmented_image.reshape(image.shape)
     # list of colors in the segmented image as hex color codes
     palette = [rgb2hex(rgb) for rgb in centers]
-    return segmented_image, palette
+    
+    return segmented_image, palette, cluster_scores

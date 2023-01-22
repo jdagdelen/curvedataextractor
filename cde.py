@@ -11,7 +11,7 @@ import numpy as np
 
 from figure_object_detection import get_image_boxes, detect_objects
 from utils import image_to_numpy
-from posterization import preprocess
+from posterization import preprocess, classify_pixels
 
 def validate_input_file_types(inputdir):
     # Check that all images are pngs or jpgs
@@ -135,7 +135,7 @@ def extract_figure_data(input_dir, output, model='models/research/object_detecti
         posterized_image = preprocess(image_np, object_data)
         
         # Get pixel classes and color palette for posterized image
-        pixel_classes, color_palette, cluster_scores = get_pixel_classes(posterized_image)
+        pixel_classes, color_palette, cluster_scores = classify_pixels(posterized_image)
         # Separate out images for each cluster
         clusters = []
         for i in range(len(color_palette)):
@@ -157,9 +157,3 @@ if __name__ == '__main__':
     parser.add_argument('--model', help='Path to pretrained model.', default='models/research/object_detection/inference_graph/frozen_inference_graph.pb')
     args = parser.parse_args()
     objects, clusters = extract_figure_data(args.input, args.output, args.model)
-
-
-        
-
-
-    

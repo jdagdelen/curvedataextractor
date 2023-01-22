@@ -28,7 +28,7 @@ install_model:
 	rm -rf folder
 
 test:
-	@conda activate cde
+	$(CONDA_ACTIVATE) cde
 	@python models/research/object_detection/builders/model_builder_tf2_test.py
 
 clean:
