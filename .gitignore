@@ -1,2 +1,5 @@
 test_output/*
 models/*
+._*
+__pycache__/*
+__MACOSX/*
