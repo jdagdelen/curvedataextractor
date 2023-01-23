@@ -3,22 +3,24 @@ SHELL = /bin/zsh
 CONDA_ACTIVATE = source $$(conda info --base)/etc/profile.d/conda.sh ; conda activate ; conda activate
 
 
-all: env install install_model test
+all: env install download_model test
 
 env: 
-	@conda create -n cde python=3.7
+	conda create -n cde python=3.7
 	conda init bash
 
 install:
 	$(CONDA_ACTIVATE) cde
-	@conda install -c anaconda protobuf
-	@pip install -r requirements.txt
-	@git clone https://github.com/tensorflow/models.git
-	@protoc models/research/object_detection/protos/*.proto --python_out=.
-	@cp models/research/object_detection/packages/tf2/setup.py models/research/
-	@python -m pip install .
+	conda install -c anaconda protobuf
+	pip install -r requirements.txt
+	git clone https://github.com/tensorflow/models.git
+	cd models/research
+	protoc object_detection/protos/*.proto --python_out=.
+	cd ../../
+	cp models/research/object_detection/packages/tf2/setup.py models/research/
+	python -m pip install models/research/
 
-install_model:
+download_model:
 	gdown 1e0UTKwhgJN9DuD2qYsLcWcKd6WomvRkl
 	unzip folder.zip
 	rm -rf folder.zip
@@ -29,7 +31,7 @@ install_model:
 
 test:
 	$(CONDA_ACTIVATE) cde
-	@python models/research/object_detection/builders/model_builder_tf2_test.py
+	python models/research/object_detection/builders/model_builder_tf2_test.py
 
 clean:
 	rm -rf __pycache__

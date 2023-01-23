@@ -75,8 +75,8 @@ def get_image_boxes(
         min_score_thresh: minimum score threshold for a box to be visualized
 
     Returns:
-        json_record: json record of the image
-        subimage: cropped image of the detected box
+        json_records: json record of the image
+        subimages: cropped images of the detected boxes
     """
     records = []
     subimages = []
@@ -103,8 +103,6 @@ def get_image_boxes(
                     'ymin':top, 
                     'ymax':bottom}
             }
-            subimage = image.crop((left, top, right, bottom))
-            subimage = Image.fromarray(image[top:bottom,left:right,:])
             records.append(json_record)
-            subimages.append(subimage)
-    return json_record, subimage
+            subimages.append(image[top:bottom,left:right,:])
+    return records, subimages

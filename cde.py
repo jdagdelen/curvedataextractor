@@ -5,9 +5,12 @@ import os
 import json
 from distutils.version import StrictVersion
 import tensorflow as tf
+# suppress tensorflow warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from PIL import Image
 import label_map_util_v2
 import numpy as np
+from tqdm import tqdm
 
 from figure_object_detection import get_image_boxes, detect_objects
 from utils import image_to_numpy
@@ -42,7 +45,7 @@ def open_images(inputdir):
             if filename.endswith('.jpg'):
                 image = Image.open(os.path.join(dirpath, filename))
                 image.save(os.path.join(dirpath, filename[:-4] + '.png'))
-            figure_images.extend(Image.open(os.path.join(dirpath, filename)))
+            figure_images.append(Image.open(os.path.join(dirpath, filename)))
     return figure_images
 
 def get_dectection_graph(graph_path):
@@ -79,18 +82,16 @@ def write_extracted_figure_data(objects, clusters, output):
     """
     # Write cluster and object data to JSON files, and save images
     for i, cluster in enumerate(clusters):
-        Image.fromarray(cluster['image']).save(os.path.join(output, 'cluster_{}.png'.format(i)))
+        image = Image.fromarray(cluster['image'])
+        image.save(os.path.join(output, 'cluster_{}.png'.format(i)))
     for i, object in enumerate(objects):
-        Image.fromarray(object['image']).save(os.path.join(output, 'object_{}.png'.format(i)))
+        image = Image.fromarray(object['image'])
+        image.save(os.path.join(output, 'object_{}.png'.format(i)))
     # add filenames to object and cluster data
     for i, cluster in enumerate(clusters):
         cluster['filename'] = 'cluster_{}.png'.format(i)
     for i, object in enumerate(objects):
         object['filename'] = 'object_{}.png'.format(i)
-    with open(os.path.join(output, 'cluster_data.json'), 'w') as f:
-        json.dump(clusters, f)
-    with open(os.path.join(output, 'object_data.json'), 'w') as f:
-        json.dump(objects, f)
 
 
 def extract_figure_data(input_dir, output, model='models/research/object_detection/inference_graph/frozen_inference_graph.pb'):
@@ -110,7 +111,8 @@ def extract_figure_data(input_dir, output, model='models/research/object_detecti
     detection_graph = get_dectection_graph(model)
     category_index = get_category_index('cde_labelmap.pbtxt')
 
-    for image in enumerate(figure_images):
+    print('Extracting figure data from {} images...'.format(len(figure_images)))
+    for image in tqdm(figure_images):
         im_width, im_height = image.size
         # the array based representation of the image will be used later in order to prepare the
         # result image with boxes and labels on it.
@@ -119,6 +121,7 @@ def extract_figure_data(input_dir, output, model='models/research/object_detecti
         detected_objects = detect_objects(image_np, detection_graph)
 
         # Extract images of axes
+        print('Extracting objects...')
         object_data, object_images = get_image_boxes(
             im_width, 
             im_height,
@@ -132,19 +135,25 @@ def extract_figure_data(input_dir, output, model='models/research/object_detecti
 
         objects = [{'image': object_image, 'data': object_data[i]} for i, object_image in enumerate(object_images)]
         # Remove legends and axes from plot, along with black and white items
+        print('Removing objects...')
         posterized_image = preprocess(image_np, object_data)
         
         # Get pixel classes and color palette for posterized image
+        print('Classifying pixels...')
         pixel_classes, color_palette, cluster_scores = classify_pixels(posterized_image)
         # Separate out images for each cluster
         clusters = []
         for i in range(len(color_palette)):
-            cluster_image = np.ones(image_np.shape)*255
-            cluster_image[pixel_classes == i] = posterized_image[pixel_classes == i]
+            # copy image
+            cluster_image = np.copy(posterized_image)
+            # write white to pixels not in cluster
+            cluster_image[pixel_classes != i] = 255
+            # get coordinates of pixels in cluster
             cluster_pixel_coordinates = np.where(pixel_classes == i)
             clusters.append({'image': cluster_image, 'color': color_palette[i], 'score': cluster_scores[i], 'coordinates': cluster_pixel_coordinates})
-        # Sort clusters by score
+        # Sort clusters and by score
         clusters = sorted(clusters, key=lambda k: k['score'], reverse=True)
+        # close image
         return objects, clusters
 
 

@@ -5,3 +5,5 @@ opencv-python==4.5.4.60
 gdown
 pillow
 absl-py
+six
+tqdm
